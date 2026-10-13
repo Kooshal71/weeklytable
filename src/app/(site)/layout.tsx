@@ -1,6 +1,11 @@
 import Image from "next/image";
 import Link from "next/link";
-import { SUPPORT_PHONE_DISPLAY, SUPPORT_PHONE_TEL } from "@/lib/contact";
+import {
+  SUPPORT_PHONE_DISPLAY,
+  SUPPORT_PHONE_TEL,
+  SUPPORT_EMAIL_DISPLAY,
+  SUPPORT_EMAIL_MAILTO,
+} from "@/lib/contact";
 
 const NAV_LINKS = [
   { href: "/", label: "Home" },
@@ -51,6 +56,9 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
           <div className="flex flex-col items-center gap-1 sm:items-end">
             <a href={SUPPORT_PHONE_TEL} className="transition hover:text-terracotta">
               {SUPPORT_PHONE_DISPLAY}
+            </a>
+            <a href={SUPPORT_EMAIL_MAILTO} className="transition hover:text-terracotta">
+              {SUPPORT_EMAIL_DISPLAY}
             </a>
             <p>&copy; {new Date().getFullYear()} Weekly Table</p>
           </div>

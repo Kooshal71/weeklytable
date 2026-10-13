@@ -5,6 +5,8 @@ import {
   SUPPORT_PHONE_DISPLAY,
   SUPPORT_PHONE_TEL,
   SUPPORT_PHONE_WHATSAPP,
+  SUPPORT_EMAIL_DISPLAY,
+  SUPPORT_EMAIL_MAILTO,
 } from "@/lib/contact";
 
 // Delivery hours must always match live CutoffConfig — never hardcode a
@@ -60,6 +62,21 @@ export default async function ContactPage() {
                 WhatsApp
               </h2>
               <p className="mt-1 text-espresso/85">{SUPPORT_PHONE_DISPLAY}</p>
+            </div>
+          </a>
+
+          <a
+            href={SUPPORT_EMAIL_MAILTO}
+            className="flex flex-col gap-3 rounded-xl border border-card-border bg-white p-6 shadow-sm transition hover:border-terracotta hover:shadow-md"
+          >
+            <span className="flex h-11 w-11 items-center justify-center rounded-full bg-sage-light text-sage">
+              <Icon name="mail" className="text-[22px]" />
+            </span>
+            <div>
+              <h2 className="font-serif text-lg font-medium text-espresso">
+                Email us
+              </h2>
+              <p className="mt-1 text-espresso/85">{SUPPORT_EMAIL_DISPLAY}</p>
             </div>
           </a>
         </div>
