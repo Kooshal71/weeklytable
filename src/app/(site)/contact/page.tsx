@@ -32,7 +32,7 @@ export default async function ContactPage() {
       </header>
 
       <section className="mx-auto max-w-3xl px-6 py-16 sm:py-20">
-        <div className="grid gap-6 sm:grid-cols-2">
+        <div className="grid gap-6 sm:grid-cols-3">
           <a
             href={SUPPORT_PHONE_TEL}
             className="flex flex-col gap-3 rounded-xl border border-card-border bg-white p-6 shadow-sm transition hover:border-terracotta hover:shadow-md"
