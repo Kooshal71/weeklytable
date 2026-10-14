@@ -107,7 +107,10 @@ export default function MenuBrowser({
   const [contactName, setContactName] = useState("");
   const [contactPhone, setContactPhone] = useState("");
   const [contactEmail, setContactEmail] = useState("");
-  const [deliveryAddress, setDeliveryAddress] = useState("");
+  const [addressLine1, setAddressLine1] = useState("");
+  const [addressLine2, setAddressLine2] = useState("");
+  const [city, setCity] = useState("");
+  const [postcode, setPostcode] = useState("");
   const [notes, setNotes] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<"stripe" | "cash">("stripe");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -197,7 +200,9 @@ export default function MenuBrowser({
     contactName.trim() !== "" &&
     contactPhone.trim() !== "" &&
     contactEmail.trim() !== "" &&
-    deliveryAddress.trim() !== "";
+    addressLine1.trim() !== "" &&
+    city.trim() !== "" &&
+    postcode.trim() !== "";
 
   const mealsSatisfied = allowExtraMeals
     ? selectedMeals.length >= mealCount
@@ -239,7 +244,10 @@ export default function MenuBrowser({
           contactName,
           contactPhone,
           contactEmail,
-          deliveryAddress,
+          addressLine1,
+          addressLine2: addressLine2.trim() === "" ? undefined : addressLine2,
+          city,
+          postcode,
           notes: notes.trim() === "" ? undefined : notes.trim(),
           paymentMethod,
         }),
@@ -576,12 +584,41 @@ export default function MenuBrowser({
               />
             </label>
             <label className="flex flex-col gap-1 text-sm text-espresso sm:col-span-2">
-              Delivery address
-              <textarea
-                value={deliveryAddress}
-                onChange={(e) => setDeliveryAddress(e.target.value)}
+              Address line 1
+              <input
+                type="text"
+                value={addressLine1}
+                onChange={(e) => setAddressLine1(e.target.value)}
                 className="rounded-lg border border-card-border bg-cream-dim px-3 py-2 text-espresso focus:border-terracotta focus:outline-none focus:ring-2 focus:ring-terracotta/20"
-                rows={2}
+                required
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm text-espresso sm:col-span-2">
+              Address line 2 (optional)
+              <input
+                type="text"
+                value={addressLine2}
+                onChange={(e) => setAddressLine2(e.target.value)}
+                className="rounded-lg border border-card-border bg-cream-dim px-3 py-2 text-espresso focus:border-terracotta focus:outline-none focus:ring-2 focus:ring-terracotta/20"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm text-espresso">
+              Town/City
+              <input
+                type="text"
+                value={city}
+                onChange={(e) => setCity(e.target.value)}
+                className="rounded-lg border border-card-border bg-cream-dim px-3 py-2 text-espresso focus:border-terracotta focus:outline-none focus:ring-2 focus:ring-terracotta/20"
+                required
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm text-espresso">
+              Postcode
+              <input
+                type="text"
+                value={postcode}
+                onChange={(e) => setPostcode(e.target.value)}
+                className="rounded-lg border border-card-border bg-cream-dim px-3 py-2 text-espresso focus:border-terracotta focus:outline-none focus:ring-2 focus:ring-terracotta/20"
                 required
               />
             </label>

@@ -5,6 +5,7 @@ import { stripe } from "@/lib/stripe";
 import { isDeliveryDateEligible, getWeekday } from "@/lib/cutoff";
 import { isDeliveryTimeValid } from "@/lib/deliveryTime";
 import { sendOrderConfirmationEmail } from "@/lib/mail";
+import { UK_POSTCODE_RE } from "@/lib/address";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -64,7 +65,10 @@ export async function POST(req: NextRequest) {
     contactName,
     contactPhone,
     contactEmail,
-    deliveryAddress,
+    addressLine1,
+    addressLine2: rawAddressLine2,
+    city,
+    postcode: rawPostcode,
     paymentMethod: rawPaymentMethod,
     notes: rawNotes,
   } = body as Record<string, unknown>;
@@ -93,9 +97,24 @@ export async function POST(req: NextRequest) {
   if (typeof contactEmail !== "string" || !EMAIL_RE.test(contactEmail)) {
     return badRequest("contactEmail must be a valid email address.");
   }
-  if (typeof deliveryAddress !== "string" || deliveryAddress.trim() === "") {
-    return badRequest("deliveryAddress is required.");
+  if (typeof addressLine1 !== "string" || addressLine1.trim() === "") {
+    return badRequest("addressLine1 is required.");
   }
+  let addressLine2: string | null = null;
+  if (rawAddressLine2 !== undefined && rawAddressLine2 !== null) {
+    if (typeof rawAddressLine2 !== "string") {
+      return badRequest("addressLine2 must be a string.");
+    }
+    const trimmed = rawAddressLine2.trim();
+    addressLine2 = trimmed === "" ? null : trimmed;
+  }
+  if (typeof city !== "string" || city.trim() === "") {
+    return badRequest("city is required.");
+  }
+  if (typeof rawPostcode !== "string" || !UK_POSTCODE_RE.test(rawPostcode.trim())) {
+    return badRequest("postcode must be a valid UK postcode.");
+  }
+  const postcode = rawPostcode.trim().toUpperCase();
   if (
     typeof rawPaymentMethod !== "string" ||
     !PAYMENT_METHODS.includes(rawPaymentMethod as PaymentMethodInput)
@@ -205,7 +224,10 @@ export async function POST(req: NextRequest) {
         contactName,
         contactPhone,
         contactEmail,
-        deliveryAddress,
+        addressLine1,
+        addressLine2,
+        city,
+        postcode,
         notes,
         paymentMethod: "cash",
         status: "pending_payment",
@@ -303,7 +325,10 @@ export async function POST(req: NextRequest) {
       contactName,
       contactPhone,
       contactEmail,
-      deliveryAddress,
+      addressLine1,
+      addressLine2,
+      city,
+      postcode,
       notes,
       paymentMethod: "stripe",
       status: "pending_payment",

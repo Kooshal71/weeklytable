@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { formatDeliveryAddress } from "@/lib/address";
 
 // Safe to expose without auth: `sessionId` is either a real Stripe
 // Checkout session id (card orders) or an Order's own id (cash orders
@@ -29,7 +30,10 @@ export async function GET(
       planPriceGbpSnapshot: true,
       contactName: true,
       contactEmail: true,
-      deliveryAddress: true,
+      addressLine1: true,
+      addressLine2: true,
+      city: true,
+      postcode: true,
       notes: true,
       items: {
         select: { dishNameSnapshot: true, deliveryDate: true, deliveryTime: true },
@@ -50,7 +54,7 @@ export async function GET(
     priceGbp: order.planPriceGbpSnapshot,
     contactName: order.contactName,
     contactEmail: order.contactEmail,
-    deliveryAddress: order.deliveryAddress,
+    deliveryAddress: formatDeliveryAddress(order),
     notes: order.notes,
     meals: order.items.map((i) => ({
       dishName: i.dishNameSnapshot,

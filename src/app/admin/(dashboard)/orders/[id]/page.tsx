@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/dal";
 import { setOrderStatus, markOrderPaidCash, toggleOrderItemFulfilled } from "../actions";
 import { formatGuaranteeWindow, formatTime12h } from "@/lib/deliveryTime";
+import { formatDeliveryAddress } from "@/lib/address";
 
 export const dynamic = "force-dynamic";
 
@@ -72,7 +73,7 @@ export default async function AdminOrderDetailPage({
         </div>
         <div className="col-span-2">
           <dt className="text-neutral-700">Delivery address</dt>
-          <dd>{order.deliveryAddress}</dd>
+          <dd>{formatDeliveryAddress(order)}</dd>
         </div>
         {order.notes && (
           <div className="col-span-2">

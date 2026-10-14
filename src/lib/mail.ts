@@ -1,5 +1,6 @@
 import { formatGuaranteeWindow, formatTime12h } from "@/lib/deliveryTime";
 import { SUPPORT_PHONE_DISPLAY, SUPPORT_PHONE_TEL } from "@/lib/contact";
+import { formatDeliveryAddress } from "@/lib/address";
 
 type OrderForEmail = {
   paymentMethod: "stripe" | "cash";
@@ -7,7 +8,10 @@ type OrderForEmail = {
   planPriceGbpSnapshot: number;
   contactName: string;
   contactEmail: string;
-  deliveryAddress: string;
+  addressLine1: string;
+  addressLine2: string | null;
+  city: string;
+  postcode: string;
   notes: string | null;
   items: { dishNameSnapshot: string; deliveryDate: Date; deliveryTime: string | null }[];
 };
@@ -90,7 +94,7 @@ function buildEmailHtml(order: OrderForEmail): string {
   <h1 style="font-size:22px;margin:0 0 16px;">Thanks, ${escapeHtml(order.contactName.split(" ")[0])} — your order is confirmed</h1>
   <p style="margin:0 0 16px;"><strong>${escapeHtml(order.planLabelSnapshot)}</strong> (£${(order.planPriceGbpSnapshot / 100).toFixed(2)})</p>
   <ul style="list-style:none;padding:0;margin:0 0 16px;">${mealsHtml}</ul>
-  <p style="margin:0 0 16px;"><strong>Delivering to:</strong> ${escapeHtml(order.deliveryAddress)}</p>
+  <p style="margin:0 0 16px;"><strong>Delivering to:</strong> ${escapeHtml(formatDeliveryAddress(order))}</p>
   ${notesHtml}
   <p style="margin:16px 0;color:#2B2421B3;">${paymentNote}</p>
   <p style="margin:24px 0 0;font-size:13px;color:#2B2421B3;">

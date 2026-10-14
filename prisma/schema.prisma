@@ -129,10 +129,13 @@ model Order {
   planLabelSnapshot    String
   planPriceGbpSnapshot Int
 
-  contactName     String
-  contactPhone    String
-  contactEmail    String
-  deliveryAddress String
+  contactName  String
+  contactPhone String
+  contactEmail String
+  addressLine1 String
+  addressLine2 String?
+  city         String
+  postcode     String
 
   // Free-text, whole-order notes (e.g. dietary restrictions) captured once
   // at checkout — not per-meal.

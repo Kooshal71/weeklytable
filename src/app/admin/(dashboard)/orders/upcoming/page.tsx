@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/dal";
 import { getDateWindow, getWeekday } from "@/lib/cutoff";
 import { formatTime12h } from "@/lib/deliveryTime";
+import { formatDeliveryAddress } from "@/lib/address";
 import PrintButton from "@/components/admin/PrintButton";
 
 export const dynamic = "force-dynamic";
@@ -51,7 +52,10 @@ export default async function UpcomingOrdersPage() {
         select: {
           contactName: true,
           contactPhone: true,
-          deliveryAddress: true,
+          addressLine1: true,
+          addressLine2: true,
+          city: true,
+          postcode: true,
           paymentMethod: true,
           status: true,
           notes: true,
@@ -144,7 +148,7 @@ export default async function UpcomingOrdersPage() {
                             {item.order.contactPhone}
                           </td>
                           <td className="py-1.5 pr-3">
-                            {item.order.deliveryAddress}
+                            {formatDeliveryAddress(item.order)}
                           </td>
                           <td className="py-1.5 pr-3 whitespace-nowrap">
                             {item.order.paymentMethod === "cash"
