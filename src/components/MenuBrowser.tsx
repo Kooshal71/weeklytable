@@ -594,7 +594,7 @@ export default function MenuBrowser({
               />
             </label>
             <label className="flex flex-col gap-1 text-sm text-espresso sm:col-span-2">
-              Address line 2 (optional)
+              Address line 2
               <input
                 type="text"
                 value={addressLine2}
