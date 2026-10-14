@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import {
   getEligibleWindow,
@@ -209,6 +209,11 @@ export default function MenuBrowser({
     : selectedMeals.length === mealCount;
 
   const canCheckout = selectedPlan !== null && mealsSatisfied && hasContactDetails;
+  // The sticky checkout bar's only other actionable state besides
+  // submitting — meals are done but the form below still needs filling in,
+  // so there's somewhere useful to scroll to rather than just disabling it.
+  const canScrollToCheckoutForm = mealsSatisfied && !hasContactDetails;
+  const checkoutSectionRef = useRef<HTMLElement>(null);
 
   // What's still needed before checkout is possible — shown in the order
   // summary card so the customer doesn't have to scan the whole page to
@@ -277,7 +282,7 @@ export default function MenuBrowser({
   }
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-10 bg-cream p-6 font-sans text-espresso antialiased sm:p-8">
+    <div className="mx-auto flex max-w-6xl flex-col gap-10 bg-cream p-6 pb-28 font-sans text-espresso antialiased sm:p-8 sm:pb-28">
       <section className="flex flex-col gap-4">
         <h2 className="flex items-center gap-2 font-serif text-2xl font-semibold text-espresso">
           <StepBadge number={1} done={selectedPlan !== null} />
@@ -533,7 +538,10 @@ export default function MenuBrowser({
         </div>
       </section>
 
-      <section className="flex flex-col gap-4 rounded-xl border border-card-border bg-white p-6 shadow-sm">
+      <section
+        ref={checkoutSectionRef}
+        className="flex flex-col gap-4 rounded-xl border border-card-border bg-white p-6 shadow-sm"
+      >
         <h2 className="flex items-center gap-2 font-serif text-2xl font-semibold text-espresso">
           <StepBadge number={3} done={canCheckout} />
           Delivery &amp; payment
@@ -777,6 +785,57 @@ export default function MenuBrowser({
           </div>
         </div>
       </section>
+
+      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-card-border bg-white/95 shadow-[0_-4px_12px_rgba(0,0,0,0.08)] backdrop-blur-sm">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-3">
+          <div className="flex flex-col leading-tight">
+            <span className="text-sm font-medium text-espresso">
+              {selectedPlan
+                ? allowExtraMeals
+                  ? `${selectedMeals.length} meal${selectedMeals.length === 1 ? "" : "s"} selected (min ${mealCount})`
+                  : `${selectedMeals.length} of ${mealCount} meals selected`
+                : "Choose a plan to get started"}
+            </span>
+            {selectedPlan && (
+              <span className="text-sm font-semibold text-terracotta">
+                {formatGbp(totalPriceGbp)}
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            disabled={(!canCheckout && !canScrollToCheckoutForm) || isSubmitting}
+            onClick={() => {
+              if (canCheckout) {
+                handleCheckout();
+              } else if (canScrollToCheckoutForm) {
+                checkoutSectionRef.current?.scrollIntoView({
+                  behavior: "smooth",
+                  block: "start",
+                });
+              }
+            }}
+            className={`flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full px-5 py-2.5 text-sm font-semibold text-white shadow-md transition active:scale-[0.98] ${
+              (canCheckout || canScrollToCheckoutForm) && !isSubmitting
+                ? "bg-terracotta hover:bg-terracotta-dark"
+                : "cursor-not-allowed bg-card-border text-espresso/60 shadow-none"
+            }`}
+          >
+            <Icon name="lock" className="text-[16px]" />
+            {isSubmitting
+              ? paymentMethod === "cash"
+                ? "Placing order…"
+                : "Redirecting…"
+              : canCheckout
+                ? paymentMethod === "cash"
+                  ? "Place order"
+                  : `Pay ${formatGbp(totalPriceGbp)}`
+                : canScrollToCheckoutForm
+                  ? "Continue to checkout ↓"
+                  : nextStepMessage ?? "Continue"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
