@@ -513,7 +513,7 @@ export default function MenuBrowser({
                     <Icon name="check" className="text-[16px] leading-none" />
                   </span>
                 )}
-                <div className="relative h-40 w-full bg-cream-dim">
+                <div className="relative aspect-square w-full bg-cream-dim">
                   <Image
                     src={dish.imageUrl}
                     alt={dish.name}
