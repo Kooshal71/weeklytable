@@ -1,5 +1,6 @@
 import { CATEGORY_LABELS, CATEGORY_VALUES, DIETARY_TAG_LABELS, DIETARY_TAG_VALUES } from "@/lib/dishOptions";
 import type { Category, DietaryTag } from "@/generated/prisma/enums";
+import DishImageField from "@/components/admin/DishImageField";
 
 const WEEKDAYS = [
   { value: "monday", label: "Mon" },
@@ -85,17 +86,9 @@ export default function DishForm({
           required
         />
       </label>
-      <label className="flex flex-col gap-1 text-sm">
-        Image URL
-        <input
-          type="text"
-          name="imageUrl"
-          defaultValue={initial?.imageUrl}
-          placeholder="/dishes/placeholder.svg"
-          className="rounded-md border border-neutral-300 px-3 py-2"
-          required
-        />
-      </label>
+      <DishImageField
+        currentImageUrl={initial?.imageUrl ?? "/dishes/placeholder.svg"}
+      />
       <fieldset className="flex flex-col gap-1 text-sm">
         <legend className="mb-1">Available days</legend>
         <div className="flex flex-wrap gap-3">

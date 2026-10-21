@@ -80,6 +80,17 @@ model Dish {
   updatedAt DateTime @updatedAt
 }
 
+// Admin-uploaded dish photos. Netlify's runtime filesystem is read-only, so
+// uploads live in Postgres and are served by /api/dish-images/[id]. Rows are
+// never mutated — a replaced photo gets a new row (and so a new, immutable,
+// forever-cacheable URL), and the old row is deleted.
+model DishImage {
+  id          String   @id @default(uuid())
+  data        Bytes
+  contentType String
+  createdAt   DateTime @default(now())
+}
+
 model Plan {
   id        String  @id @default(uuid())
   label     String
