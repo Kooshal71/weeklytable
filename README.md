@@ -55,7 +55,7 @@ There is no site-URL variable. Stripe return URLs use the origin of the incoming
 - **Addresses:** structured UK fields (line 1, line 2, city, postcode), validated in `src/lib/address.ts`.
 - **Admin:** `/admin`, with roles `owner` (everything), `kitchen` (orders and the upcoming report), `delivery` (upcoming report only). Sessions are signed JWT cookies. `src/proxy.ts` is an optimistic check, and every server action re-checks via `src/lib/dal.ts` (`requireRole`).
 - **Dish photos:** shipped photos live in `public/dishes/`. Photos uploaded in the admin are stored in Postgres (`DishImage`) and served from `/api/dish-images/<id>`, because Netlify's filesystem is read-only. The browser shrinks photos before upload, and the server checks the real file type.
-- **Maintenance mode:** the owner switch in Admin > Settings is stored in the `SiteSetting` table and takes effect within seconds, with no redeploy. `/admin` and `/api` are never gated, so the owner can always switch it off. Read in `src/proxy.ts` through `src/lib/siteSettings.ts`.
+- **Maintenance mode:** the owner switch in Admin > Settings is stored in the `SiteSetting` table and takes effect within seconds, with no redeploy. `/admin` and `/api` are never gated, so the owner can always switch it off. Read in `src/lib/siteSettings.ts`. `src/proxy.ts` runs as a Netlify Edge Function, which cannot load the `pg` driver, so it fetches `/api/site-status` instead of importing Prisma. Keep `@/lib/prisma` out of anything the proxy imports.
 - **Code layout:** pages in `src/app/(site)/`, admin in `src/app/admin/`, API routes in `src/app/api/`, shared logic in `src/lib/`, schema and migrations in `prisma/`.
 
 ## Database changes

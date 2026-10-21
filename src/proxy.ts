@@ -1,8 +1,39 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySessionToken, SESSION_COOKIE_NAME } from "@/lib/session";
-import { isMaintenanceOn } from "@/lib/siteSettings";
 
 const MAINTENANCE_BYPASS_COOKIE = "maintenance_bypass";
+const STATUS_CACHE_MS = 5_000;
+const STATUS_FAILURE_CACHE_MS = 2_000;
+const STATUS_TIMEOUT_MS = 3_000;
+
+let statusCache: { value: boolean; expiresAt: number } | null = null;
+
+// The proxy runs as a Netlify Edge Function, where the pg driver behind
+// Prisma can't load, so it must not import @/lib/prisma (directly or via
+// @/lib/siteSettings). It asks /api/site-status instead. Fail-open like
+// isMaintenanceOn(): if the status can't be fetched, the site stays reachable.
+async function isMaintenanceOn(req: NextRequest): Promise<boolean> {
+  if (process.env.MAINTENANCE_MODE === "true") return true;
+
+  const now = Date.now();
+  if (statusCache && statusCache.expiresAt > now) return statusCache.value;
+
+  try {
+    const res = await fetch(new URL("/api/site-status", req.url), {
+      cache: "no-store",
+      signal: AbortSignal.timeout(STATUS_TIMEOUT_MS),
+    });
+    if (!res.ok) throw new Error(`status ${res.status}`);
+    const { maintenance } = (await res.json()) as { maintenance?: boolean };
+    const value = maintenance === true;
+    statusCache = { value, expiresAt: now + STATUS_CACHE_MS };
+    return value;
+  } catch (err) {
+    console.error("proxy: could not fetch /api/site-status, treating maintenance as off:", err);
+    statusCache = { value: false, expiresAt: now + STATUS_FAILURE_CACHE_MS };
+    return false;
+  }
+}
 
 // /admin is excluded because it has its own session gate (and is where the
 // owner switches maintenance back off), and /api is excluded because Stripe's
@@ -23,7 +54,7 @@ export async function proxy(req: NextRequest) {
   // entirely, so previewing never costs a settings lookup.
   const hasBypassCookie = req.cookies.get(MAINTENANCE_BYPASS_COOKIE)?.value === "1";
 
-  if (isMaintenanceGatedPath(pathname) && !hasBypassCookie && (await isMaintenanceOn())) {
+  if (isMaintenanceGatedPath(pathname) && !hasBypassCookie && (await isMaintenanceOn(req))) {
     const bypassSecret = process.env.MAINTENANCE_BYPASS_SECRET;
     const previewParam = req.nextUrl.searchParams.get("preview");
     const hasValidPreview = Boolean(bypassSecret) && previewParam === bypassSecret;
