@@ -46,3 +46,19 @@ export async function updateCutoffConfig(formData: FormData) {
   revalidatePath("/admin/settings");
   revalidatePath("/");
 }
+
+// Takes effect within a few seconds (see the cache in src/lib/siteSettings.ts)
+// and needs no redeploy. /admin is never gated, so the owner can always
+// reach this page to switch it back off.
+export async function setMaintenanceMode(formData: FormData) {
+  await requireRole(["owner"]);
+  const enabled = formData.get("enabled") === "true";
+
+  await prisma.siteSetting.upsert({
+    where: { id: "default" },
+    update: { maintenanceMode: enabled },
+    create: { id: "default", maintenanceMode: enabled },
+  });
+
+  revalidatePath("/admin/settings");
+}

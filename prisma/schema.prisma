@@ -80,6 +80,15 @@ model Dish {
   updatedAt DateTime @updatedAt
 }
 
+// Singleton (id "default") for site-wide switches that must change without a
+// deploy. maintenanceMode is read by src/proxy.ts; the MAINTENANCE_MODE env
+// var can also force maintenance on.
+model SiteSetting {
+  id              String   @id @default("default")
+  maintenanceMode Boolean  @default(false)
+  updatedAt       DateTime @updatedAt
+}
+
 // Admin-uploaded dish photos. Netlify's runtime filesystem is read-only, so
 // uploads live in Postgres and are served by /api/dish-images/[id]. Rows are
 // never mutated — a replaced photo gets a new row (and so a new, immutable,

@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySessionToken, SESSION_COOKIE_NAME } from "@/lib/session";
+import { isMaintenanceOn } from "@/lib/siteSettings";
 
 const MAINTENANCE_BYPASS_COOKIE = "maintenance_bypass";
 
-// /admin is excluded below because it has its own session gate, and /api is
-// excluded because Stripe's webhook calls (and our own bypassed testing)
-// need to keep working while the public site is gated.
-function isMaintenanceGated(pathname: string) {
+// /admin is excluded because it has its own session gate (and is where the
+// owner switches maintenance back off), and /api is excluded because Stripe's
+// webhook calls (and our own bypassed testing) need to keep working while the
+// public site is gated.
+function isMaintenanceGatedPath(pathname: string) {
   return (
-    process.env.MAINTENANCE_MODE === "true" &&
     pathname !== "/maintenance" &&
     !pathname.startsWith("/admin") &&
     !pathname.startsWith("/api")
@@ -18,26 +19,27 @@ function isMaintenanceGated(pathname: string) {
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  if (isMaintenanceGated(pathname)) {
+  // A visitor already holding the bypass cookie skips the maintenance check
+  // entirely, so previewing never costs a settings lookup.
+  const hasBypassCookie = req.cookies.get(MAINTENANCE_BYPASS_COOKIE)?.value === "1";
+
+  if (isMaintenanceGatedPath(pathname) && !hasBypassCookie && (await isMaintenanceOn())) {
     const bypassSecret = process.env.MAINTENANCE_BYPASS_SECRET;
     const previewParam = req.nextUrl.searchParams.get("preview");
     const hasValidPreview = Boolean(bypassSecret) && previewParam === bypassSecret;
-    const hasBypassCookie = req.cookies.get(MAINTENANCE_BYPASS_COOKIE)?.value === "1";
 
-    if (!hasValidPreview && !hasBypassCookie) {
+    if (!hasValidPreview) {
       return NextResponse.redirect(new URL("/maintenance", req.url));
     }
 
-    if (hasValidPreview && !hasBypassCookie) {
-      const res = NextResponse.next();
-      res.cookies.set(MAINTENANCE_BYPASS_COOKIE, "1", {
-        httpOnly: true,
-        secure: true,
-        sameSite: "lax",
-        maxAge: 60 * 60 * 24,
-      });
-      return res;
-    }
+    const res = NextResponse.next();
+    res.cookies.set(MAINTENANCE_BYPASS_COOKIE, "1", {
+      httpOnly: true,
+      secure: true,
+      sameSite: "lax",
+      maxAge: 60 * 60 * 24,
+    });
+    return res;
   }
 
   // Optimistic check only (cookie-signature verification, no DB read) — per
