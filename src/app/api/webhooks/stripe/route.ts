@@ -3,6 +3,7 @@ import Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe";
 import { sendOrderConfirmationEmail } from "@/lib/mail";
+import { notifyWhatsAppOrderPaid } from "@/lib/whatsapp/bot";
 
 // The only place an Order's status ever becomes "paid". Never trust the
 // success_url redirect for this — a signed, Stripe-verified webhook event
@@ -59,6 +60,9 @@ export async function POST(req: NextRequest) {
     });
 
     await sendOrderConfirmationEmail(paidOrder);
+    if (paidOrder.source === "whatsapp") {
+      await notifyWhatsAppOrderPaid(paidOrder);
+    }
   }
 
   return NextResponse.json({ received: true });

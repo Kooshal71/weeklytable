@@ -43,13 +43,16 @@ Documented in `.env.example`. Summary:
 | `MAINTENANCE_BYPASS_SECRET` | Lets you preview the site during maintenance via `/?preview=<secret>` |
 | `MAINTENANCE_MODE` | Leave empty. If `true` it forces maintenance on and overrides the admin switch |
 | `MS365_TENANT_ID`, `MS365_CLIENT_ID`, `MS365_CLIENT_SECRET`, `MS365_SENDER_EMAIL` | Confirmation emails. If any is missing, emails are skipped without error |
+| `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_CATALOG_ID` | WhatsApp ordering bot and catalogue. Unset means the bot is off |
+| `WHATSAPP_DRY_RUN` | Local testing only: log WhatsApp replies instead of sending them |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_ROLE` | Only for `prisma/create-admin.ts`, passed on the command line |
 
 There is no site-URL variable. Stripe return URLs use the origin of the incoming request, so the app works on any domain.
 
 ## How things work
 
-- **Ordering flow:** `src/components/MenuBrowser.tsx` (client) builds the order. `POST /api/orders` validates everything again on the server (day availability, cutoff, plan size, address, time slot) and either creates a Stripe Checkout session or a cash order.
+- **Ordering flow:** `src/components/MenuBrowser.tsx` (client) builds the order. `POST /api/orders` passes it to `placeOrder` in `src/lib/orders.ts`, which validates everything again on the server (day availability, cutoff, plan size, address, time slot) and either creates a Stripe Checkout session or a cash order.
+- **WhatsApp ordering:** customers message the business number, browse the dish catalogue and send a cart. The bot (`src/lib/whatsapp/bot.ts`, webhook `POST /api/webhooks/whatsapp`) walks them through plan, day and time per meal, and address, then calls the same `placeOrder`. Orders are marked `source = whatsapp` in the admin. Test locally with `scripts/whatsapp-simulate.ts`. Setup in `docs/INTEGRATIONS.md`.
 - **Payment confirmation:** Stripe calls `POST /api/webhooks/stripe` (event `checkout.session.completed`), which marks the order paid and sends the confirmation email.
 - **Cutoff and delivery window:** one `CutoffConfig` row, edited in Admin > Settings. Logic in `src/lib/cutoff.ts` and `src/lib/deliveryTime.ts`.
 - **Addresses:** structured UK fields (line 1, line 2, city, postcode), validated in `src/lib/address.ts`.

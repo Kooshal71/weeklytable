@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/dal";
-import { setMaintenanceMode, updateCutoffConfig } from "./actions";
+import { isWhatsAppConfigured } from "@/lib/whatsapp/client";
+import { isCatalogConfigured } from "@/lib/whatsapp/catalog";
+import { setMaintenanceMode, syncWhatsAppCatalogNow, updateCutoffConfig } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +17,12 @@ export default async function AdminSettingsPage() {
   });
   const maintenanceOn = siteSetting?.maintenanceMode ?? false;
   const forcedByEnv = process.env.MAINTENANCE_MODE === "true";
+
+  const whatsAppReady = isWhatsAppConfigured() && Boolean(process.env.WHATSAPP_APP_SECRET);
+  const catalogReady = isCatalogConfigured();
+  const lastSync = await prisma.whatsAppCatalogSync.findUnique({
+    where: { id: "default" },
+  });
 
   return (
     <div className="flex flex-col gap-4">
@@ -43,6 +51,38 @@ export default async function AdminSettingsPage() {
             {maintenanceOn ? "Turn maintenance OFF" : "Turn maintenance ON"}
           </button>
         </form>
+      </section>
+
+      <section className="flex max-w-md flex-col gap-2 rounded-md border border-neutral-300 p-4">
+        <h2 className="text-lg font-semibold">WhatsApp ordering</h2>
+        <p className="text-sm text-neutral-600">
+          Customers can browse the menu and order by messaging the business
+          WhatsApp number. Dishes are copied to the WhatsApp catalogue
+          automatically when you save one; sync here after changing plan
+          prices, or if the catalogue looks out of date. Dishes without a
+          photo are left out.
+        </p>
+        <p className="text-sm font-medium">
+          Ordering bot: {whatsAppReady ? "connected" : "not set up (see docs/INTEGRATIONS.md)"}
+          <br />
+          Catalogue: {catalogReady ? "connected" : "not set up"}
+        </p>
+        {lastSync && (
+          <p className={`text-sm ${lastSync.ok ? "text-neutral-600" : "text-red-700"}`}>
+            Last sync {lastSync.updatedAt.toISOString().slice(0, 16).replace("T", " ")} UTC:{" "}
+            {lastSync.message}
+          </p>
+        )}
+        {catalogReady && (
+          <form action={syncWhatsAppCatalogNow}>
+            <button
+              type="submit"
+              className="w-fit rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white"
+            >
+              Sync catalogue now
+            </button>
+          </form>
+        )}
       </section>
 
       <h1 className="text-2xl font-semibold">Order &amp; delivery settings</h1>

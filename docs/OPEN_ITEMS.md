@@ -13,6 +13,12 @@ Known loose ends as of 21 October 2026. Delete a line when it is done.
 - **Old Vercel project and webhook.** The site was first deployed on Vercel. Delete the Vercel project and its test Stripe webhook endpoint once the new Netlify site is confirmed working.
 - **Accounts owned by the developer's family member.** The GitHub repo, Neon database and Netlify site were created under a personal account that is not the business owner's. Hand-over steps are in `DEPLOYMENT.md`. Rotate secrets afterwards.
 
+## WhatsApp
+
+- **Meta setup.** The WhatsApp bot code is in place but needs the owner-side Meta setup in `docs/INTEGRATIONS.md` (WhatsApp section) before it does anything. Run the migration `20261026120000_add_whatsapp_ordering` on each database first.
+- **Optional email for WhatsApp orders.** The bot asks for an email because orders require one. If customers find that annoying, make `Order.contactEmail` optional and skip the confirmation email when it is empty (the WhatsApp confirmation covers it).
+- **Paid confirmation outside 24 hours.** If a customer pays more than 24 hours after their last WhatsApp message, Meta blocks the free-form "payment received" message. Rare, but an approved message template would cover it.
+
 ## Optional hardening
 
 - **Admin login rate limit.** `/api/admin/login` has no attempt limit. Add one (for example per IP and per email) before the admin is widely shared.

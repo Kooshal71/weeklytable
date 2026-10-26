@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/dal";
+import { requestOrigin, syncWhatsAppCatalog } from "@/lib/whatsapp/catalog";
 
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -60,5 +61,13 @@ export async function setMaintenanceMode(formData: FormData) {
     create: { id: "default", maintenanceMode: enabled },
   });
 
+  revalidatePath("/admin/settings");
+}
+
+// Pushes every dish to the WhatsApp catalogue now. The outcome is stored
+// and shown on the settings page; dish edits also re-sync on their own.
+export async function syncWhatsAppCatalogNow() {
+  await requireRole(["owner"]);
+  await syncWhatsAppCatalog(await requestOrigin());
   revalidatePath("/admin/settings");
 }

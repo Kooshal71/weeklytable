@@ -25,6 +25,13 @@ enum PaymentMethod {
   cash
 }
 
+// Where the order was placed. Defaults to web so historical rows (all
+// placed on the website) backfill correctly.
+enum OrderSource {
+  web
+  whatsapp
+}
+
 enum Weekday {
   monday
   tuesday
@@ -165,6 +172,11 @@ model Order {
   // this being the first non-Stripe path) backfill correctly.
   paymentMethod PaymentMethod @default(stripe)
 
+  // For whatsapp orders, contactPhone holds the customer's WhatsApp number
+  // (digits only, international format), which is where the paid
+  // confirmation is sent.
+  source OrderSource @default(web)
+
   status OrderStatus @default(pending_payment)
 
   // Nullable: cash orders never create a real Stripe Checkout Session.
@@ -206,6 +218,46 @@ model OrderItem {
 
   @@index([orderId])
   @@index([deliveryDate])
+}
+
+// One row per WhatsApp chat (keyed by the customer's wa_id), holding where
+// the ordering bot is in its conversation. Serverless functions keep no
+// memory between webhook calls, so all bot state lives here. See
+// src/lib/whatsapp/bot.ts.
+model WhatsAppConversation {
+  waId        String  @id
+  profileName String?
+  step        String  @default("idle")
+  draft       Json    @default("{}")
+
+  // While in the future the bot stays silent in this chat, because a
+  // person is handling it (customer asked for one, or the owner replied
+  // from the WhatsApp Business app on the same number).
+  humanUntil DateTime?
+
+  // Throttles the unprompted welcome so ordinary support chats aren't
+  // answered by the bot on every message.
+  lastWelcomeAt DateTime?
+
+  updatedAt DateTime @updatedAt
+}
+
+// Meta retries webhook deliveries, so each inbound message id (wamid) is
+// recorded once and repeats are ignored. Old rows are pruned by the webhook.
+model WhatsAppProcessedMessage {
+  id        String   @id
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+// Singleton (id "default"): result of the last dish catalogue sync to Meta,
+// shown in Admin > Settings.
+model WhatsAppCatalogSync {
+  id        String   @id @default("default")
+  ok        Boolean
+  message   String
+  updatedAt DateTime @updatedAt
 }
 
 model AdminUser {
