@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic";
 
 const STATUSES = ["pending_payment", "paid", "fulfilled", "cancelled"] as const;
 const PAYMENT_METHODS = ["stripe", "cash"] as const;
+const SOURCES = ["web", "whatsapp"] as const;
 
 function formatGbp(pence: number) {
   return `£${(pence / 100).toFixed(2)}`;
@@ -19,6 +20,7 @@ export default async function AdminOrdersPage({
     status?: string;
     deliveryDate?: string;
     paymentMethod?: string;
+    source?: string;
   }>;
 }) {
   await requireRole(["owner", "kitchen"]);
@@ -28,6 +30,9 @@ export default async function AdminOrdersPage({
   if (params.status) where.status = params.status as Prisma.OrderWhereInput["status"];
   if (params.paymentMethod) {
     where.paymentMethod = params.paymentMethod as Prisma.OrderWhereInput["paymentMethod"];
+  }
+  if (params.source) {
+    where.source = params.source as Prisma.OrderWhereInput["source"];
   }
   if (params.deliveryDate) {
     // An order can now span several delivery dates (one per meal) — "filter
@@ -87,6 +92,21 @@ export default async function AdminOrdersPage({
           </select>
         </label>
         <label className="flex flex-col gap-1 text-sm">
+          Placed via
+          <select
+            name="source"
+            defaultValue={params.source ?? ""}
+            className="rounded-md border border-neutral-300 px-2 py-1"
+          >
+            <option value="">All</option>
+            {SOURCES.map((src) => (
+              <option key={src} value={src}>
+                {src === "whatsapp" ? "WhatsApp" : "Website"}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
           Has a meal on
           <input
             type="date"
@@ -101,7 +121,7 @@ export default async function AdminOrdersPage({
         >
           Filter
         </button>
-        {(params.status || params.deliveryDate || params.paymentMethod) && (
+        {(params.status || params.deliveryDate || params.paymentMethod || params.source) && (
           <Link href="/admin/orders" className="text-sm text-neutral-600 underline">
             Clear
           </Link>
@@ -139,6 +159,11 @@ export default async function AdminOrdersPage({
                 </td>
                 <td className="py-2 pr-4">
                   {order.paymentMethod === "cash" ? "Cash" : "Card"}
+                  {order.source === "whatsapp" && (
+                    <span className="ml-2 rounded bg-green-100 px-1.5 py-0.5 text-xs text-green-800">
+                      WhatsApp
+                    </span>
+                  )}
                 </td>
                 <td className="py-2 pr-4">
                   {fulfilledCount}/{order.items.length}

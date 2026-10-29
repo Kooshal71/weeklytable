@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/dal";
+import { syncWhatsAppCatalogAfterResponse } from "@/lib/whatsapp/catalog";
 import { Weekday, Category, DietaryTag } from "@/generated/prisma/enums";
 
 const VALID_WEEKDAYS = new Set(Object.values(Weekday));
@@ -100,6 +101,7 @@ export async function createDish(formData: FormData) {
     await tx.dish.create({ data: { ...data, imageUrl } });
   });
 
+  await syncWhatsAppCatalogAfterResponse();
   revalidatePath("/admin/dishes");
   revalidatePath("/order");
   revalidatePath("/");
@@ -134,6 +136,7 @@ export async function updateDish(dishId: string, formData: FormData) {
     }
   });
 
+  await syncWhatsAppCatalogAfterResponse();
   revalidatePath("/admin/dishes");
   revalidatePath("/order");
   revalidatePath("/");
@@ -143,6 +146,7 @@ export async function updateDish(dishId: string, formData: FormData) {
 export async function toggleDishActive(dishId: string, isActive: boolean) {
   await requireRole(["owner"]);
   await prisma.dish.update({ where: { id: dishId }, data: { isActive } });
+  await syncWhatsAppCatalogAfterResponse();
   revalidatePath("/admin/dishes");
   revalidatePath("/");
 }

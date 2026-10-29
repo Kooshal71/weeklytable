@@ -63,7 +63,10 @@ export default async function AdminOrderDetailPage({
         </div>
         <div>
           <dt className="text-neutral-700">Placed</dt>
-          <dd>{order.createdAt.toISOString()}</dd>
+          <dd>
+            {order.createdAt.toISOString()}
+            {order.source === "whatsapp" ? " via WhatsApp" : " on the website"}
+          </dd>
         </div>
         <div className="col-span-2">
           <dt className="text-neutral-700">Contact</dt>
