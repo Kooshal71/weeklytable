@@ -16,6 +16,9 @@ export const MAX_BUTTON_TITLE = 20;
 export const MAX_LIST_ROWS = 10;
 export const MAX_ROW_TITLE = 24;
 export const MAX_ROW_DESCRIPTION = 72;
+export const MAX_PRODUCTS = 30;
+export const MAX_PRODUCT_SECTIONS = 10;
+const MAX_HEADER = 60;
 
 export type ListRow = { id: string; title: string; description?: string };
 export type Button = { id: string; title: string };
@@ -25,6 +28,8 @@ export type OutgoingMessage =
   | { kind: "buttons"; body: string; buttons: Button[] }
   | { kind: "list"; body: string; buttonLabel: string; rows: ListRow[] }
   | { kind: "catalog"; body: string; thumbnailRetailerId?: string }
+  // A multi-product message: chosen catalogue items, addable to the cart.
+  | { kind: "products"; header: string; body: string; sections: { title: string; retailerIds: string[] }[] }
   | { kind: "cta_url"; body: string; label: string; url: string };
 
 let warnedMissingConfig = false;
@@ -100,6 +105,23 @@ function toPayload(to: string, message: OutgoingMessage): Record<string, unknown
             ...(message.thumbnailRetailerId
               ? { parameters: { thumbnail_product_retailer_id: message.thumbnailRetailerId } }
               : {}),
+          },
+        },
+      };
+    case "products":
+      return {
+        ...base,
+        type: "interactive",
+        interactive: {
+          type: "product_list",
+          header: { type: "text", text: truncate(message.header, MAX_HEADER) },
+          body: { text: message.body },
+          action: {
+            catalog_id: process.env.WHATSAPP_CATALOG_ID ?? "",
+            sections: message.sections.slice(0, MAX_PRODUCT_SECTIONS).map((section) => ({
+              title: truncate(section.title, MAX_ROW_TITLE),
+              product_items: section.retailerIds.map((id) => ({ product_retailer_id: id })),
+            })),
           },
         },
       };

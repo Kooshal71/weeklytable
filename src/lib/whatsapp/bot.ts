@@ -13,13 +13,16 @@ import {
   quoteOrderGbp,
   type PaymentMethodInput,
 } from "@/lib/orders";
+import { CATEGORY_LABELS, CATEGORY_VALUES, DIETARY_TAG_LABELS } from "@/lib/dishOptions";
 import {
   MAX_LIST_ROWS,
+  MAX_PRODUCTS,
   sendWhatsAppMessage,
   type ListRow,
   type OutgoingMessage,
 } from "@/lib/whatsapp/client";
 import type { Prisma } from "@/generated/prisma/client";
+import type { Category } from "@/generated/prisma/enums";
 
 // The WhatsApp ordering bot: one conversation row per chat, advanced one
 // inbound message at a time. Mirrors the website's flow (plan, a dish plus
@@ -86,6 +89,13 @@ const MAX_MEALS = 21;
 // One list row is kept back for the "Later times" pager.
 const TIME_PAGE_SIZE = MAX_LIST_ROWS - 1;
 
+// Dishes in the WhatsApp catalogue: placeholder (SVG) photos are never
+// synced to Meta, see catalog.ts.
+const MENU_DISH_WHERE = {
+  isActive: true,
+  NOT: { imageUrl: { endsWith: ".svg" } },
+} satisfies Prisma.DishWhereInput;
+
 const ORDER_WORDS = new Set(["menu", "order", "start", "restart", "order food"]);
 const CANCEL_WORDS = new Set(["cancel", "stop order"]);
 const HELP_WORDS = new Set(["help", "how it works"]);
@@ -131,7 +141,8 @@ const TALK_TO_A_PERSON =
 
 const HOW_IT_WORKS =
   "How it works:\n" +
-  "1. Open the menu and add the meals you want to your cart (add 2 of a dish for 2 meals).\n" +
+  "1. Type *menu*, pick a category (or type a dish or ingredient to search) and add the meals you want " +
+  "to your cart (add 2 of a dish for 2 meals).\n" +
   "2. Send the cart. We'll match it to a weekly plan and show the price.\n" +
   "3. Pick a delivery day and time for each meal.\n" +
   "4. Give us your address, then pay by card or choose cash on delivery.\n\n" +
@@ -179,6 +190,11 @@ export async function handleWhatsAppMessage(message: InboundMessage, origin: str
     replies.push({ kind: "text", body: HOW_IT_WORKS });
   } else if (ORDER_WORDS.has(word) || replyId === "menu:browse") {
     next = await startOrder(conversation, replies);
+  } else if (replyId.startsWith("cat:")) {
+    // A category from the menu list. Works from any step: it only shows
+    // dishes, and the order restarts when a cart arrives.
+    await showCategory(replyId.slice("cat:".length), replies);
+    if (conversation.step === "idle") next = { ...conversation, step: "awaiting_cart", draft: {} };
   } else if (message.kind === "order") {
     next = await receiveCart(conversation, message.items, replies);
   } else if (conversation.step === "idle") {
@@ -220,7 +236,7 @@ export async function handleWhatsAppMessage(message: InboundMessage, origin: str
     const sent = await sendWhatsAppMessage(message.from, reply);
     // Meta refuses the catalogue message when no catalogue is linked or it
     // is under review. Never leave the customer with silence.
-    if (!sent && reply.kind === "catalog") {
+    if (!sent && (reply.kind === "catalog" || reply.kind === "products")) {
       await sendWhatsAppMessage(message.from, {
         kind: "text",
         body:
@@ -283,26 +299,156 @@ async function startOrder(conversation: Conversation, replies: OutgoingMessage[]
     });
     return { ...conversation, step: "idle", draft: {} };
   }
-  const [thumbnail, plans] = await Promise.all([
-    prisma.dish.findFirst({
-      where: { isActive: true, NOT: { imageUrl: { endsWith: ".svg" } } },
-      orderBy: { name: "asc" },
-      select: { id: true },
-    }),
+  const [dishes, plans] = await Promise.all([
+    prisma.dish.findMany({ where: MENU_DISH_WHERE, select: { category: true } }),
     prisma.plan.findMany({ where: { isActive: true } }),
   ]);
+  const counts = new Map<Category, number>();
+  for (const d of dishes) counts.set(d.category, (counts.get(d.category) ?? 0) + 1);
+  const rows: ListRow[] = CATEGORY_VALUES.filter((c) => counts.has(c))
+    .slice(0, MAX_LIST_ROWS - 1)
+    .map((c) => {
+      const n = counts.get(c) ?? 0;
+      return { id: `cat:${c}`, title: CATEGORY_LABELS[c], description: `${n} dish${n === 1 ? "" : "es"}` };
+    });
+  rows.push({ id: "cat:all", title: "See everything", description: "The whole menu in one list" });
+
   const prices = planPriceLines(plans);
   replies.push({
-    kind: "catalog",
+    kind: "list",
     body:
-      "Here's this week's menu. Add the meals you want to your cart (2 of a dish = 2 meals), then tap *Send* in the cart." +
+      "Here's this week's menu. Pick a category to see its dishes, or type a dish or ingredient " +
+      "(for example *chicken* or *vegetarian*) to search.\n\n" +
+      "Add the meals you want to your cart (2 of a dish = 2 meals). You can add from several categories, " +
+      "then tap *Send* in the cart." +
       (prices
         ? `\n\n💷 *The more you order, the less each meal costs:*\n${prices}\n\n` +
-          "The menu shows the 1-meal price. Your discount is applied when you send your cart."
+          "Dishes show the 1-meal price. Your discount is applied when you send your cart."
         : ""),
-    thumbnailRetailerId: thumbnail?.id,
+    buttonLabel: "Choose category",
+    rows,
   });
   return { ...conversation, step: "awaiting_cart", draft: {} };
+}
+
+/** Sends one category's dishes as product messages, or the whole
+ * catalogue for "all". */
+async function showCategory(value: string, replies: OutgoingMessage[]): Promise<void> {
+  if (value === "all") {
+    const thumbnail = await prisma.dish.findFirst({
+      where: MENU_DISH_WHERE,
+      orderBy: { name: "asc" },
+      select: { id: true },
+    });
+    replies.push({
+      kind: "catalog",
+      body: "Here's the whole menu. Add meals to your cart, then tap *Send* in the cart. Type *menu* to browse by category.",
+      thumbnailRetailerId: thumbnail?.id,
+    });
+    return;
+  }
+  const category = CATEGORY_VALUES.find((c) => c === value);
+  const dishes = category
+    ? await prisma.dish.findMany({
+        where: { ...MENU_DISH_WHERE, category },
+        orderBy: { name: "asc" },
+        select: { id: true },
+      })
+    : [];
+  if (!category || dishes.length === 0) {
+    replies.push({ kind: "text", body: "That category has no dishes right now. Type *menu* to see the others." });
+    return;
+  }
+  pushProductPages(
+    CATEGORY_LABELS[category],
+    CATEGORY_LABELS[category],
+    dishes.map((d) => d.id),
+    "Tap a dish to see it, add the ones you want to your cart, then send the cart. Type *menu* for other categories.",
+    replies,
+  );
+}
+
+const SEARCH_STOP_WORDS = new Set([
+  "and", "any", "dish", "dishes", "food", "for", "have", "meal", "meals", "please", "show", "some", "the",
+  "want", "with", "you",
+]);
+
+/** Searches the menu for `query` and sends the matches as product
+ * messages. Every word of 3+ letters must start a word of the dish's name,
+ * description, category or dietary tag. Only used once the customer has
+ * opened the menu, so ordinary chat like "hello" never becomes a search. */
+async function showSearchResults(query: string, replies: OutgoingMessage[]): Promise<void> {
+  const terms = query
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((t) => t.length >= 3 && !SEARCH_STOP_WORDS.has(t))
+    .map((t) => (t.length > 3 && t.endsWith("s") ? t.slice(0, -1) : t));
+  if (terms.length === 0) {
+    replies.push({ kind: "text", body: "Type a dish or ingredient to search, or *menu* to browse by category." });
+    return;
+  }
+
+  const dishes = await prisma.dish.findMany({
+    where: MENU_DISH_WHERE,
+    orderBy: { name: "asc" },
+    select: { id: true, name: true, description: true, category: true, dietaryTag: true },
+  });
+  const words = (value: string) => value.toLowerCase().split(/[^a-z0-9]+/);
+  const matches = dishes
+    .map((d) => {
+      const nameWords = words(d.name);
+      const allWords = [
+        ...nameWords,
+        ...words(d.description),
+        ...words(CATEGORY_LABELS[d.category]),
+        ...(d.dietaryTag ? words(DIETARY_TAG_LABELS[d.dietaryTag]) : []),
+      ];
+      const hit = terms.every((t) => allWords.some((w) => w.startsWith(t)));
+      const inName = terms.every((t) => nameWords.some((w) => w.startsWith(t)));
+      return { id: d.id, hit, inName };
+    })
+    .filter((m) => m.hit)
+    // Name matches first; the sort is stable, so each group stays A to Z.
+    .sort((a, b) => Number(b.inName) - Number(a.inName));
+
+  if (matches.length === 0) {
+    replies.push({
+      kind: "text",
+      body: `No dishes match "${query.trim()}". Try another word, or type *menu* to browse by category.`,
+    });
+    return;
+  }
+  const shown = matches.slice(0, MAX_PRODUCTS);
+  pushProductPages(
+    `Results for "${query.trim()}"`,
+    "Matching dishes",
+    shown.map((m) => m.id),
+    (matches.length > shown.length
+      ? `Showing the first ${shown.length} of ${matches.length} matches; try a more specific word. `
+      : "") + "Add the ones you want to your cart, then send the cart. Type *menu* to browse by category.",
+    replies,
+  );
+}
+
+/** Product messages hold at most MAX_PRODUCTS dishes, so long lists are
+ * split across several, numbered in the header. */
+function pushProductPages(
+  title: string,
+  sectionTitle: string,
+  retailerIds: string[],
+  body: string,
+  replies: OutgoingMessage[],
+): void {
+  const pages = Math.ceil(retailerIds.length / MAX_PRODUCTS);
+  for (let page = 0; page < pages; page++) {
+    const ids = retailerIds.slice(page * MAX_PRODUCTS, (page + 1) * MAX_PRODUCTS);
+    replies.push({
+      kind: "products",
+      header: pages > 1 ? `${title} (${page + 1} of ${pages})` : title,
+      body,
+      sections: [{ title: sectionTitle, retailerIds: ids }],
+    });
+  }
 }
 
 async function receiveCart(
@@ -692,10 +838,15 @@ async function advance(
 
   switch (conversation.step) {
     case "awaiting_cart":
-      replies.push({
-        kind: "text",
-        body: "Add meals to your cart from the menu above, then tap *Send* in the cart. Type *menu* to see it again.",
-      });
+      // Typed text while browsing is a search.
+      if (text) {
+        await showSearchResults(text, replies);
+      } else {
+        replies.push({
+          kind: "text",
+          body: "Add meals to your cart from the menu above, then tap *Send* in the cart. Type *menu* to see it again.",
+        });
+      }
       return conversation;
 
     case "choose_plan": {
