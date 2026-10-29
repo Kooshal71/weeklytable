@@ -9,6 +9,7 @@ import {
   MAX_NOTES_LENGTH,
   placeOrder,
   planAcceptsMealCount,
+  planSavingGbp,
   quoteOrderGbp,
   type PaymentMethodInput,
 } from "@/lib/orders";
@@ -94,6 +95,11 @@ function formatGbp(pence: number): string {
   return `£${(pence / 100).toFixed(2)}`;
 }
 
+/** "£40.00 (you save £10.00)", or just the total when there is no saving. */
+function formatTotal(total: number, saving: number): string {
+  return saving > 0 ? `${formatGbp(total)} (you save ${formatGbp(saving)})` : formatGbp(total);
+}
+
 function formatDateShort(isoDate: string): string {
   const [y, m, d] = isoDate.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-GB", {
@@ -118,6 +124,10 @@ function welcomeMessage(profileName: string | null): OutgoingMessage {
     ],
   };
 }
+
+const TALK_TO_A_PERSON =
+  "This chat is our automated ordering assistant, so messages here aren't read by the team. " +
+  `To speak to someone, please call or text us on ${SUPPORT_PHONE_DISPLAY}.`;
 
 const HOW_IT_WORKS =
   "How it works:\n" +
@@ -159,14 +169,9 @@ export async function handleWhatsAppMessage(message: InboundMessage, origin: str
   let next: Conversation = conversation;
 
   if (HUMAN_WORDS.has(word) || replyId === "menu:human") {
-    humanUntil = new Date(now.getTime() + HUMAN_HANDOFF_MS);
-    next = { ...conversation, step: "idle", draft: {} };
-    replies.push({
-      kind: "text",
-      body:
-        "No problem, someone from the team will reply here shortly. " +
-        `You can also call us on ${SUPPORT_PHONE_DISPLAY}. Type *menu* whenever you'd like to order.`,
-    });
+    // Nobody reads this chat: the number runs on the Cloud API only, so
+    // people are reached by a normal phone call or text.
+    replies.push({ kind: "text", body: TALK_TO_A_PERSON });
   } else if (CANCEL_WORDS.has(word)) {
     next = { ...conversation, step: "idle", draft: {} };
     replies.push({ kind: "text", body: "Order cancelled. Type *menu* whenever you want to start again." });
@@ -177,11 +182,16 @@ export async function handleWhatsAppMessage(message: InboundMessage, origin: str
   } else if (message.kind === "order") {
     next = await receiveCart(conversation, message.items, replies);
   } else if (conversation.step === "idle") {
-    // Unprompted chat: greet once a day at most, otherwise stay out of the
-    // way — it's likely a support conversation the owner will answer.
+    // Unprompted chat: the full welcome once a day at most, a short pointer
+    // otherwise. Nobody else answers here, so never stay silent.
     if (!lastWelcomeAt || now.getTime() - lastWelcomeAt.getTime() > WELCOME_THROTTLE_MS) {
       replies.push(welcomeMessage(profileName));
       lastWelcomeAt = now;
+    } else {
+      replies.push({
+        kind: "text",
+        body: `Type *menu* to order. ${TALK_TO_A_PERSON}`,
+      });
     }
   } else {
     next = await advance(conversation, { text, replyId }, message.from, origin, replies);
@@ -207,7 +217,21 @@ export async function handleWhatsAppMessage(message: InboundMessage, origin: str
   });
 
   for (const reply of replies) {
-    await sendWhatsAppMessage(message.from, reply);
+    const sent = await sendWhatsAppMessage(message.from, reply);
+    // Meta refuses the catalogue message when no catalogue is linked or it
+    // is under review. Never leave the customer with silence.
+    if (!sent && reply.kind === "catalog") {
+      await sendWhatsAppMessage(message.from, {
+        kind: "text",
+        body:
+          "Sorry, our WhatsApp menu isn't available right now. You can order at weeklytable.co.uk, " +
+          `or call us on ${SUPPORT_PHONE_DISPLAY}.`,
+      });
+      await prisma.whatsAppConversation.update({
+        where: { waId: message.from },
+        data: { step: "idle", draft: {} },
+      });
+    }
   }
 }
 
@@ -222,6 +246,35 @@ export async function pauseBotForChat(waId: string): Promise<void> {
   });
 }
 
+/** The per-meal price at each plan size, with neighbouring sizes at the
+ * same rate merged: "• 1 or 2 meals: £11 each", "• 5 or more: £9 each". */
+function planPriceLines(plans: { mealCount: number; priceGbp: number; allowExtraMeals: boolean }[]): string {
+  const groups: { from: number; to: number; open: boolean; rate: number }[] = [];
+  for (const p of [...plans].sort((a, b) => a.mealCount - b.mealCount)) {
+    const rate = Math.round(p.priceGbp / p.mealCount);
+    const last = groups.at(-1);
+    if (last && !last.open && last.rate === rate && last.to + 1 === p.mealCount) {
+      last.to = p.mealCount;
+      last.open = p.allowExtraMeals;
+    } else {
+      groups.push({ from: p.mealCount, to: p.mealCount, open: p.allowExtraMeals, rate });
+    }
+  }
+  return groups
+    .map((g) => {
+      const size = g.open
+        ? `${g.from} or more`
+        : g.from === g.to
+          ? `${g.from} meal${g.from === 1 ? "" : "s"}`
+          : g.to === g.from + 1
+            ? `${g.from} or ${g.to} meals`
+            : `${g.from} to ${g.to} meals`;
+      const each = g.open || g.to > 1 ? " each" : "";
+      return `• ${size}: ${formatGbp(g.rate).replace(/\.00$/, "")}${each}`;
+    })
+    .join("\n");
+}
+
 async function startOrder(conversation: Conversation, replies: OutgoingMessage[]): Promise<Conversation> {
   if (await isMaintenanceOn()) {
     replies.push({
@@ -230,15 +283,23 @@ async function startOrder(conversation: Conversation, replies: OutgoingMessage[]
     });
     return { ...conversation, step: "idle", draft: {} };
   }
-  const thumbnail = await prisma.dish.findFirst({
-    where: { isActive: true, NOT: { imageUrl: { endsWith: ".svg" } } },
-    orderBy: { name: "asc" },
-    select: { id: true },
-  });
+  const [thumbnail, plans] = await Promise.all([
+    prisma.dish.findFirst({
+      where: { isActive: true, NOT: { imageUrl: { endsWith: ".svg" } } },
+      orderBy: { name: "asc" },
+      select: { id: true },
+    }),
+    prisma.plan.findMany({ where: { isActive: true } }),
+  ]);
+  const prices = planPriceLines(plans);
   replies.push({
     kind: "catalog",
     body:
-      "Here's this week's menu. Add the meals you want to your cart (2 of a dish = 2 meals), then tap *Send* in the cart.",
+      "Here's this week's menu. Add the meals you want to your cart (2 of a dish = 2 meals), then tap *Send* in the cart." +
+      (prices
+        ? `\n\n💷 *The more you order, the less each meal costs:*\n${prices}\n\n` +
+          "The menu shows the 1-meal price. Your discount is applied when you send your cart."
+        : ""),
     thumbnailRetailerId: thumbnail?.id,
   });
   return { ...conversation, step: "awaiting_cart", draft: {} };
@@ -302,18 +363,24 @@ async function receiveCart(
   }
 
   const draft: Draft = { dishIds };
+  const nameById = new Map(
+    (await prisma.dish.findMany({ where: { id: { in: uniqueIds } }, select: { id: true, name: true } })).map(
+      (d) => [d.id, d.name],
+    ),
+  );
+  const mealList = dishIds.map((id, i) => `${i + 1}. ${nameById.get(id) ?? "Meal"}`).join("\n");
   if (matching.length === 1) {
     const plan = matching[0];
     replies.push({
       kind: "text",
-      body: `Great, ${meals} on the *${plan.label}* plan: ${formatGbp(quoteOrderGbp(plan, dishIds.length))} in total.`,
+      body: `Great, ${meals} on the *${plan.label}* plan: ${formatTotal(quoteOrderGbp(plan, dishIds.length), planSavingGbp(plan, dishIds.length, plans))} in total.\n\n${mealList}\n\nNow let's pick a day and time for each meal.`,
     });
     return beginMeal({ ...conversation, draft: { ...draft, planId: plan.id, dates: [], times: [] } }, 0, replies);
   }
 
   replies.push({
     kind: "list",
-    body: `You've picked ${meals}. Which plan would you like?`,
+    body: `You've picked ${meals}:\n${mealList}\n\nWhich plan would you like?`,
     buttonLabel: "Choose plan",
     rows: matching.map((p) => ({
       id: `plan:${p.id}`,
@@ -338,6 +405,17 @@ async function datesForDish(dishId: string): Promise<string[]> {
   return getEligibleWindow(config).filter((date) => dish.availableDays.includes(getWeekday(date)));
 }
 
+/** "Katsu Curry Bowl", or "Katsu Curry Bowl (2nd of 2)" when the same
+ * dish is in the order more than once, so repeats don't look like a glitch. */
+async function mealLabel(dishIds: string[], index: number): Promise<string> {
+  const name = await dishName(dishIds[index]);
+  const total = dishIds.filter((id) => id === dishIds[index]).length;
+  if (total === 1) return name;
+  const nth = dishIds.slice(0, index + 1).filter((id) => id === dishIds[index]).length;
+  const ordinal = ["1st", "2nd", "3rd"][nth - 1] ?? `${nth}th`;
+  return `${name} (${ordinal} of ${total})`;
+}
+
 async function dishName(dishId: string): Promise<string> {
   const dish = await prisma.dish.findUnique({ where: { id: dishId }, select: { name: true } });
   return dish?.name ?? "this meal";
@@ -348,12 +426,14 @@ async function dishName(dishId: string): Promise<string> {
 async function beginMeal(conversation: Conversation, index: number, replies: OutgoingMessage[]): Promise<Conversation> {
   const draft = conversation.draft;
   const dishIds = draft.dishIds ?? [];
+  // Meals already scheduled by a shortcut are skipped.
+  while (index < dishIds.length && draft.dates?.[index] && draft.times?.[index]) index++;
   if (index >= dishIds.length) {
     return askName({ ...conversation, draft: { ...draft, mealIndex: index } }, replies);
   }
 
   const dates = await datesForDish(dishIds[index]);
-  const name = await dishName(dishIds[index]);
+  const name = await mealLabel(dishIds, index);
   if (dates.length === 0) {
     replies.push({
       kind: "text",
@@ -444,11 +524,18 @@ async function applySameForRest(
       }
     }
     if (unavailable.length > 0) {
+      const names = Array.from(new Set(unavailable));
+      const scheduled = dates.filter(Boolean).length;
       replies.push({
         kind: "text",
-        body: `${Array.from(new Set(unavailable)).join(", ")} can't be delivered on ${formatDateShort(firstDate)}, so let's pick days one by one.`,
+        body:
+          (scheduled > 1
+            ? `Done: ${scheduled} meals are set for ${formatDateShort(firstDate)} at ${formatTime12h(firstTime)}.\n\n`
+            : "") +
+          `${names.join(", ")} ${names.length === 1 ? "isn't" : "aren't"} cooked on ${getWeekday(firstDate).replace(/^./, (c) => c.toUpperCase())}s, ` +
+          `so please pick another day (same time, ${formatTime12h(firstTime)}).`,
       });
-      return beginMeal({ ...conversation, draft: { ...draft, dates: [firstDate], times: [firstTime] } }, 1, replies);
+      return beginMeal({ ...conversation, draft: { ...draft, dates, times, fixedTime: firstTime } }, 1, replies);
     }
     return beginMeal({ ...conversation, draft: { ...draft, dates, times } }, dishIds.length, replies);
   }
@@ -477,8 +564,9 @@ const skipButton = (body: string): OutgoingMessage => ({
 async function summary(conversation: Conversation): Promise<string> {
   const d = conversation.draft;
   const dishIds = d.dishIds ?? [];
-  const [plan, dishes] = await Promise.all([
+  const [plan, plans, dishes] = await Promise.all([
     prisma.plan.findUnique({ where: { id: d.planId ?? "" } }),
+    prisma.plan.findMany({ where: { isActive: true } }),
     prisma.dish.findMany({ where: { id: { in: dishIds } }, select: { id: true, name: true } }),
   ]);
   const nameById = new Map(dishes.map((x) => [x.id, x.name]));
@@ -496,7 +584,7 @@ async function summary(conversation: Conversation): Promise<string> {
     `*Your order: ${plan?.label ?? "plan"}*`,
     ...lines,
     "",
-    `Total: *${plan ? formatGbp(quoteOrderGbp(plan, dishIds.length)) : "?"}*`,
+    `Total: *${plan ? formatTotal(quoteOrderGbp(plan, dishIds.length), planSavingGbp(plan, dishIds.length, plans)) : "?"}*`,
     `Name: ${d.contactName}`,
     `Email: ${d.contactEmail}`,
     `Address: ${address}`,

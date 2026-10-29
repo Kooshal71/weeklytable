@@ -1,6 +1,7 @@
 import { after } from "next/server";
 import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
+import { fullPricePerMealGbp } from "@/lib/orders";
 import { GRAPH_API_BASE } from "@/lib/whatsapp/client";
 
 // Pushes the dish menu into the Meta commerce catalogue linked to the
@@ -43,6 +44,10 @@ function formatCatalogPrice(pence: number): string {
   return `${(pence / 100).toFixed(2)} GBP`;
 }
 
+function formatGbp(pence: number): string {
+  return `£${(pence / 100).toFixed(2).replace(/\.00$/, "")}`;
+}
+
 export type CatalogSyncResult = { ok: boolean; message: string };
 
 /** Upserts every dish into the catalogue. `origin` makes image and product
@@ -77,13 +82,22 @@ async function runSync(origin: string): Promise<CatalogSyncResult> {
     prisma.plan.findMany({ where: { isActive: true } }),
   ]);
 
-  // Meta requires a price per product, but meals are priced by plan. Show
-  // the cheapest per-meal rate; the bot quotes the real total before payment.
-  const perMealRates = plans.map((p) => Math.round(p.priceGbp / p.mealCount));
-  if (perMealRates.length === 0) {
+  // Meta allows one fixed price per product, but meals are priced by plan.
+  // Show the full per-meal price, so the cart total is never below what the
+  // bot quotes (bigger plans only ever come out cheaper), and spell out the
+  // plan rates in the description.
+  if (plans.length === 0) {
     return { ok: false, message: "No active plans, so there is no price to show." };
   }
-  const fromPence = Math.min(...perMealRates);
+  const fullPence = fullPricePerMealGbp(plans);
+  const pricing = [...plans]
+    .sort((a, b) => a.mealCount - b.mealCount)
+    .map((p) => {
+      const rate = formatGbp(Math.round(p.priceGbp / p.mealCount));
+      const count = `${p.mealCount}${p.allowExtraMeals ? "+" : ""}`;
+      return p.mealCount === 1 && !p.allowExtraMeals ? `1 meal ${rate}` : `${count} meals ${rate} each`;
+    })
+    .join(" · ");
 
   const withPhoto = dishes.filter((d) => !d.imageUrl.endsWith(".svg"));
   const skipped = dishes.length - withPhoto.length;
@@ -95,11 +109,11 @@ async function runSync(origin: string): Promise<CatalogSyncResult> {
       data: {
         id: dish.id,
         title: dish.name,
-        description: `${tag}${dish.description} Priced by your weekly plan, from £${(fromPence / 100).toFixed(2)} a meal.`,
+        description: `${tag}${dish.description} Weekly plan prices: ${pricing}.`,
         availability: dish.isActive ? "in stock" : "out of stock",
         visibility: dish.isActive ? "published" : "hidden",
         condition: "new",
-        price: formatCatalogPrice(fromPence),
+        price: formatCatalogPrice(fullPence),
         link: `${origin}/menu`,
         image_link: `${origin}${dish.imageUrl}`,
         brand: "Weekly Table",

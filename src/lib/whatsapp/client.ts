@@ -147,7 +147,13 @@ async function postToGraph(payload: Record<string, unknown>): Promise<boolean> {
       signal: AbortSignal.timeout(8_000),
     });
     if (!res.ok) {
-      console.error(`WhatsApp: send failed: ${res.status} ${await res.text()}`);
+      // The payload is logged without the recipient: Meta's error alone
+      // rarely says which field it rejected.
+      const { to: _to, ...rest } = payload;
+      void _to;
+      console.error(
+        `WhatsApp: send failed: ${res.status} ${await res.text()} payload=${JSON.stringify(rest)}`,
+      );
       return false;
     }
     return true;

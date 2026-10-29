@@ -64,6 +64,18 @@ export function quoteOrderGbp(plan: PlanForQuote, mealCount: number): number {
   return plan.allowExtraMeals ? pricePerMealGbp * mealCount : plan.priceGbp;
 }
 
+/** The full per-meal price: the dearest per-meal rate among `plans` (the
+ * single-meal plan, in practice). Bigger plans are discounts off this. */
+export function fullPricePerMealGbp(plans: PlanForQuote[]): number {
+  return Math.max(0, ...plans.map((p) => Math.round(p.priceGbp / p.mealCount)));
+}
+
+/** How much `mealCount` meals on `plan` save against the full per-meal
+ * price, in pence (0 when there is no saving). */
+export function planSavingGbp(plan: PlanForQuote, mealCount: number, plans: PlanForQuote[]): number {
+  return Math.max(0, fullPricePerMealGbp(plans) * mealCount - quoteOrderGbp(plan, mealCount));
+}
+
 function badRequest(error: string): PlaceOrderResult {
   return { ok: false, error, status: 400 };
 }
