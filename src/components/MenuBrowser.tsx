@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import {
   getEligibleWindow,
@@ -17,6 +17,7 @@ import {
 import { CATEGORY_LABELS, DIETARY_TAG_LABELS } from "@/lib/dishOptions";
 import type { Category, DietaryTag } from "@/generated/prisma/enums";
 import { Icon } from "@/components/Icon";
+import { track } from "@/lib/analytics";
 import {
   SUPPORT_PHONE_DISPLAY,
   SUPPORT_PHONE_TEL,
@@ -164,11 +165,22 @@ export default function MenuBrowser({
   });
 
   function selectPlan(planId: string) {
+    const plan = plans.find((p) => p.id === planId);
+    if (plan) track("order-plan-select", { plan: plan.label, meals: plan.mealCount });
     setSelectedPlanId(planId);
     setSelectedMeals([]); // changing tier resets the (now differently-sized) selection
   }
 
   function toggleMeal(dishId: string, date: string, time: string) {
+    const dish = dishes.find((d) => d.id === dishId);
+    const alreadySelected = selectedMeals.some((m) => m.dishId === dishId && m.date === date);
+    if (dish && (alreadySelected || allowExtraMeals || selectedMeals.length < mealCount)) {
+      track(alreadySelected ? "order-meal-remove" : "order-meal-add", {
+        dish: dish.name,
+        category: dish.category,
+        day: getWeekday(date),
+      });
+    }
     setSelectedMeals((current) => {
       const exists = current.some((m) => m.dishId === dishId && m.date === date);
       if (exists) {
@@ -180,6 +192,10 @@ export default function MenuBrowser({
   }
 
   function removeMeal(index: number) {
+    const meal = selectedMeals[index];
+    if (meal) {
+      track("order-meal-remove", { dish: dishName(meal.dishId), day: getWeekday(meal.date) });
+    }
     setSelectedMeals((current) => current.filter((_, i) => i !== index));
   }
 
@@ -215,6 +231,45 @@ export default function MenuBrowser({
   const canScrollToCheckoutForm = mealsSatisfied && !hasContactDetails;
   const checkoutSectionRef = useRef<HTMLElement>(null);
 
+  // --- Analytics (src/lib/analytics.ts). Together with the /order page view
+  // these make the funnel: plan -> meals complete -> details started ->
+  // checkout submitted -> order confirmed (on /order-confirmed). ---
+
+  // Stripe's cancel button sends people back here with ?checkout=cancelled.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("checkout") === "cancelled") {
+      track("order-checkout-cancelled");
+    }
+  }, []);
+
+  const wasMealsSatisfied = useRef(false);
+  useEffect(() => {
+    if (selectedPlan && mealsSatisfied && !wasMealsSatisfied.current) {
+      track("order-meals-complete", {
+        plan: selectedPlan.label,
+        meals: selectedMeals.length,
+      });
+    }
+    wasMealsSatisfied.current = mealsSatisfied;
+  }, [mealsSatisfied, selectedPlan, selectedMeals.length]);
+
+  const detailsStarted = useRef(false);
+  function handleDetailsFocus() {
+    if (detailsStarted.current) return;
+    detailsStarted.current = true;
+    track("order-details-start", { meals: selectedMeals.length });
+  }
+
+  const searchQuery = search.trim().toLowerCase();
+  const searchResultCount = filteredDishes.length;
+  useEffect(() => {
+    if (searchQuery.length < 2) return;
+    const timer = setTimeout(() => {
+      track("order-search", { term: searchQuery.slice(0, 50), results: searchResultCount });
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, [searchQuery, searchResultCount]);
+
   // What's still needed before checkout is possible — shown in the order
   // summary card so the customer doesn't have to scan the whole page to
   // work out what's missing.
@@ -233,6 +288,12 @@ export default function MenuBrowser({
 
   async function handleCheckout() {
     if (!selectedPlan) return;
+    track("order-checkout-submit", {
+      plan: selectedPlan.label,
+      meals: selectedMeals.length,
+      method: paymentMethod,
+      total: totalPriceGbp / 100,
+    });
     setIsSubmitting(true);
     setSubmitError(null);
     try {
@@ -261,6 +322,10 @@ export default function MenuBrowser({
       const data = await res.json();
 
       if (!res.ok) {
+        track("order-checkout-error", {
+          error: String(data.error ?? `HTTP ${res.status}`).slice(0, 100),
+          method: paymentMethod,
+        });
         setSubmitError(data.error ?? "Something went wrong. Please try again.");
         setIsSubmitting(false);
         return;
@@ -276,6 +341,7 @@ export default function MenuBrowser({
         window.location.href = `/order-confirmed?session_id=${encodeURIComponent(data.orderId)}`;
       }
     } catch {
+      track("order-checkout-error", { error: "network", method: paymentMethod });
       setSubmitError("Could not reach the server. Please try again.");
       setIsSubmitting(false);
     }
@@ -560,7 +626,10 @@ export default function MenuBrowser({
         </p>
 
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1.6fr_1fr]">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div
+            className="grid grid-cols-1 gap-3 sm:grid-cols-2"
+            onFocus={handleDetailsFocus}
+          >
             <label className="flex flex-col gap-1 text-sm text-espresso">
               Name
               <input
@@ -655,7 +724,10 @@ export default function MenuBrowser({
                     type="radio"
                     name="paymentMethod"
                     checked={paymentMethod === "stripe"}
-                    onChange={() => setPaymentMethod("stripe")}
+                    onChange={() => {
+                      setPaymentMethod("stripe");
+                      track("order-payment-method", { method: "stripe" });
+                    }}
                     className="accent-terracotta"
                   />
                   <Icon name="credit_card" className="text-[18px] text-terracotta" />
@@ -677,7 +749,10 @@ export default function MenuBrowser({
                     type="radio"
                     name="paymentMethod"
                     checked={paymentMethod === "cash"}
-                    onChange={() => setPaymentMethod("cash")}
+                    onChange={() => {
+                      setPaymentMethod("cash");
+                      track("order-payment-method", { method: "cash" });
+                    }}
                     className="accent-terracotta"
                   />
                   <Icon name="payments" className="text-[18px] text-terracotta" />
@@ -766,6 +841,9 @@ export default function MenuBrowser({
               <div className="flex flex-wrap gap-x-4 gap-y-1">
                 <a
                   href={SUPPORT_PHONE_TEL}
+                  data-umami-event="contact"
+                  data-umami-event-method="phone"
+                  data-umami-event-location="order-page"
                   className="flex items-center gap-1 text-sm font-medium text-terracotta hover:underline"
                 >
                   <Icon name="call" className="text-[16px]" />
@@ -773,6 +851,9 @@ export default function MenuBrowser({
                 </a>
                 <a
                   href={SUPPORT_PHONE_WHATSAPP}
+                  data-umami-event="contact"
+                  data-umami-event-method="whatsapp"
+                  data-umami-event-location="order-page"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center gap-1 text-sm font-medium text-terracotta hover:underline"

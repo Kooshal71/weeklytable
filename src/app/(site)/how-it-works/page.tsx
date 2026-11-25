@@ -73,6 +73,8 @@ export default function HowItWorksPage() {
         <div className="mt-4 text-center">
           <Link
             href="/order"
+            data-umami-event="cta-order"
+            data-umami-event-location="how-it-works"
             className="inline-block rounded-full bg-terracotta px-6 py-3 text-base font-semibold text-white shadow-sm transition hover:bg-terracotta-dark hover:shadow-md"
           >
             Start your order
