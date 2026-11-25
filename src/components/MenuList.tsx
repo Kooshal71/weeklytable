@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import {
   CATEGORY_LABELS,
   CATEGORY_VALUES,
@@ -137,6 +138,16 @@ export default function MenuList({ dishes }: { dishes: DishView[] }) {
   function chooseDiet(tag: DietaryTag | "all") {
     setDietaryFilter(tag);
     track("menu-filter-diet", { diet: tag });
+  }
+
+  // Carries the day filter along when the dish is cooked that day, so the
+  // order page books it on the day the visitor was looking at.
+  function orderHref(dish: DishView) {
+    const params = new URLSearchParams({ dish: dish.id });
+    if (dayFilter !== "all" && dish.availableDays.includes(dayFilter)) {
+      params.set("day", dayFilter);
+    }
+    return `/order?${params}`;
   }
 
   function clearFilters() {
@@ -300,6 +311,17 @@ export default function MenuList({ dishes }: { dishes: DishView[] }) {
                         <span className="sr-only">Available: </span>
                         {formatAvailability(dish.availableDays)}
                       </p>
+                      <Link
+                        href={orderHref(dish)}
+                        data-umami-event="menu-add-to-order"
+                        data-umami-event-dish={dish.name}
+                        data-umami-event-category={dish.category}
+                        aria-label={`Add ${dish.name} to your order`}
+                        className="mt-3 flex min-h-[44px] items-center justify-center gap-2 rounded-full bg-terracotta-dark px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-espresso hover:shadow-md motion-safe:active:scale-[0.98]"
+                      >
+                        <Icon name="add_shopping_cart" className="text-[18px]" />
+                        Add to order
+                      </Link>
                     </div>
                   </li>
                 ))}

@@ -83,10 +83,16 @@ export default function MenuBrowser({
   dishes,
   plans,
   cutoffConfig,
+  initialDishId = null,
+  initialDay = null,
 }: {
   dishes: DishView[];
   plans: PlanView[];
   cutoffConfig: CutoffConfigLike & DeliveryWindowConfigLike;
+  /** A dish to pre-add, from "Add to order" on the menu page. */
+  initialDishId?: string | null;
+  /** The day the visitor had filtered the menu to, if any. */
+  initialDay?: WeekdayName | null;
 }) {
   const eligibleDates = useMemo(
     () => getEligibleWindow(cutoffConfig),
@@ -97,14 +103,29 @@ export default function MenuBrowser({
     [cutoffConfig],
   );
 
-  const [activeDate, setActiveDate] = useState(eligibleDates[0]);
+  // The menu's "Add to order" pre-adds its dish on the first orderable date
+  // it's cooked — on the day the visitor filtered to, when possible. Unknown
+  // or inactive dishes are simply ignored.
+  const [menuPick, setMenuPick] = useState<SelectedMeal | null>(() => {
+    const dish = initialDishId ? dishes.find((d) => d.id === initialDishId) : undefined;
+    if (!dish) return null;
+    const cookedOn = (date: string) => dish.availableDays.includes(getWeekday(date));
+    const date =
+      eligibleDates.find((d) => cookedOn(d) && (!initialDay || getWeekday(d) === initialDay)) ??
+      eligibleDates.find(cookedOn);
+    return date ? { dishId: dish.id, date, time: deliveryTimeSlots[0] } : null;
+  });
+
+  const [activeDate, setActiveDate] = useState(menuPick?.date ?? eligibleDates[0]);
   const [activeTime, setActiveTime] = useState(deliveryTimeSlots[0]);
   const [categoryFilter, setCategoryFilter] = useState<Category | "all">("all");
   const [search, setSearch] = useState("");
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(
     plans[0]?.id ?? null,
   );
-  const [selectedMeals, setSelectedMeals] = useState<SelectedMeal[]>([]);
+  const [selectedMeals, setSelectedMeals] = useState<SelectedMeal[]>(
+    menuPick ? [menuPick] : [],
+  );
   const [contactName, setContactName] = useState("");
   const [contactPhone, setContactPhone] = useState("");
   const [contactEmail, setContactEmail] = useState("");
@@ -168,7 +189,13 @@ export default function MenuBrowser({
     const plan = plans.find((p) => p.id === planId);
     if (plan) track("order-plan-select", { plan: plan.label, meals: plan.mealCount });
     setSelectedPlanId(planId);
-    setSelectedMeals([]); // changing tier resets the (now differently-sized) selection
+    // Keep what's already picked. Only a smaller fixed plan drops meals, and
+    // then only the most recently added ones.
+    setSelectedMeals((current) =>
+      plan && !plan.allowExtraMeals && current.length > plan.mealCount
+        ? current.slice(0, plan.mealCount)
+        : current,
+    );
   }
 
   function toggleMeal(dishId: string, date: string, time: string) {
@@ -236,10 +263,28 @@ export default function MenuBrowser({
   // checkout submitted -> order confirmed (on /order-confirmed). ---
 
   // Stripe's cancel button sends people back here with ?checkout=cancelled.
+  // The menu's "Add to order" arrives with ?dish=…: record that add, then
+  // tidy the URL so a refresh or a shared link doesn't look pre-filled.
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get("checkout") === "cancelled") {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("checkout") === "cancelled") {
       track("order-checkout-cancelled");
     }
+    if (url.searchParams.has("dish") || url.searchParams.has("day")) {
+      if (menuPick) {
+        const dish = dishes.find((d) => d.id === menuPick.dishId);
+        track("order-meal-add", {
+          dish: dish?.name ?? menuPick.dishId,
+          category: dish?.category ?? "unknown",
+          day: getWeekday(menuPick.date),
+          source: "menu",
+        });
+      }
+      url.searchParams.delete("dish");
+      url.searchParams.delete("day");
+      window.history.replaceState(null, "", url.pathname + url.search);
+    }
+    // Runs once on arrival; menuPick and dishes are fixed by then.
   }, []);
 
   const wasMealsSatisfied = useRef(false);
@@ -349,6 +394,28 @@ export default function MenuBrowser({
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-10 bg-cream p-6 pb-28 font-sans text-espresso antialiased sm:p-8 sm:pb-28">
+      {menuPick &&
+        selectedMeals.some((m) => m.dishId === menuPick.dishId && m.date === menuPick.date) && (
+        <div
+          role="status"
+          className="flex items-start gap-3 rounded-xl border border-sage/40 bg-sage-light/50 px-4 py-3 text-sm text-espresso"
+        >
+          <Icon name="check_circle" className="mt-0.5 shrink-0 text-[20px] text-sage" />
+          <p className="flex-1">
+            <span className="font-semibold">{dishName(menuPick.dishId)}</span> is in your
+            order for {formatDayTab(menuPick.date)}. Choose your plan below, then pick the
+            rest of your meals — you can change the day or time any time.
+          </p>
+          <button
+            type="button"
+            onClick={() => setMenuPick(null)}
+            aria-label="Dismiss"
+            className="-m-2 flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-espresso/70 hover:bg-white/60 hover:text-espresso"
+          >
+            <Icon name="close" className="text-[20px]" />
+          </button>
+        </div>
+      )}
       <section className="flex flex-col gap-4">
         <h2 className="flex items-center gap-2 font-serif text-2xl font-semibold text-espresso">
           <StepBadge number={1} done={selectedPlan !== null} />
