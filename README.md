@@ -74,5 +74,6 @@ Production and staging used two separate Neon databases. A migration that adds a
 - `docs/DEPLOYMENT.md`: where everything lives and the account hand-over checklist.
 - `docs/OPERATIONS.md`: day-to-day admin tasks and troubleshooting.
 - `docs/OPEN_ITEMS.md`: known loose ends and what is still to do.
+- `docs/AUDIT.md`: UI/UX audit checklist (November 2026), ticked off as fixes land.
 
 Workflow rule: test locally and push to `main` only when a milestone is done. Every push to `main` costs Netlify build credits.
