@@ -1,6 +1,6 @@
 # Third-party integrations
 
-Four services. Each section says what it does, how it is wired in the code, how to set it up from scratch, and what breaks if it is wrong. Account owners are in `DEPLOYMENT.md`.
+Five services. Each section says what it does, how it is wired in the code, how to set it up from scratch, and what breaks if it is wrong. Account owners are in `DEPLOYMENT.md`.
 
 ## Neon (Postgres database)
 
@@ -59,6 +59,44 @@ Four services. Each section says what it does, how it is wired in the code, how 
 - The client secret expires (the maximum is 24 months). When it does, emails stop silently. Put a reminder in the calendar and create the replacement before expiry.
 - Microsoft has temporarily throttled outbound mail from new tenants before. Sends then failed until the limit lifted.
 - Failures show in the Netlify function logs as `sendOrderConfirmationEmail: Graph sendMail failed: <status>`.
+
+## Umami (visitor analytics)
+
+**Does:** counts visitors, page views, where they came from (Google, Facebook, WhatsApp links…), country and device, and records what people do on the menu and order pages. It sets no cookies and stores no personal data, so no cookie banner is needed. The admin panel and the maintenance page are never tracked.
+
+**In the code:** `src/components/Analytics.tsx` loads `https://cloud.umami.is/script.js` from the customer-facing layout (`src/app/(site)/layout.tsx`), and only when `NEXT_PUBLIC_UMAMI_WEBSITE_ID` is set. Link clicks are tracked with `data-umami-event` attributes. Everything else goes through `track()` in `src/lib/analytics.ts`, which queues events until the script loads and never throws. Never send names, emails, phones, addresses, postcodes or notes.
+
+**Events:**
+
+| Event | When | Data |
+|---|---|---|
+| `cta-order`, `cta-how-it-works` | An Order now / How it works button is clicked | `location` |
+| `contact` | A phone, WhatsApp or email link is clicked | `method`, `location` |
+| `menu-search` | Someone searches the menu (after they stop typing) | `term`, `results` |
+| `menu-filter-day`, `menu-filter-diet`, `menu-category-jump`, `menu-clear-filters` | Menu filters are used | `day` / `diet` / `category` |
+| `order-plan-select` | A plan is chosen | `plan`, `meals` |
+| `order-meal-add`, `order-meal-remove` | A dish is added or removed | `dish`, `category`, `day` |
+| `order-search` | Someone searches on the order page | `term`, `results` |
+| `order-meals-complete` | Enough meals are picked for the plan | `plan`, `meals` |
+| `order-details-start` | The first delivery-details field is focused | `meals` |
+| `order-payment-method` | Card or cash is chosen | `method` |
+| `order-checkout-submit` | Pay / Place order is pressed | `plan`, `meals`, `method`, `total` |
+| `order-checkout-error` | The order is rejected or the server can't be reached | `error`, `method` |
+| `order-checkout-cancelled` | Someone comes back from Stripe without paying | — |
+| `order-confirmed` | The confirmation page shows a confirmed order (once per order) | `plan`, `meals`, `method`, `revenue`, `currency` |
+| `order-confirm-not-found`, `order-confirm-still-processing` | The confirmation page can't confirm the order | — |
+
+**Set up from scratch:**
+1. Create an account at cloud.umami.is (the free Hobby plan is enough).
+2. Settings > Websites > Add website: name `Weekly Table`, domain `weeklytable.co.uk`. Copy the **Website ID**.
+3. Netlify > Site configuration > Environment variables: add `NEXT_PUBLIC_UMAMI_WEBSITE_ID`, then redeploy.
+4. In Umami, add a **Funnel** report: `/order` → `order-plan-select` → `order-meals-complete` → `order-details-start` → `order-checkout-submit` → `order-confirmed`. This shows where people drop out of ordering.
+
+**Gotchas:**
+- The ID is baked in at build time, so changing it needs a redeploy.
+- Only visits on `weeklytable.co.uk` and `www.weeklytable.co.uk` are counted (`TRACKED_DOMAINS` in `Analytics.tsx`). Local dev and `*.netlify.app` URLs are ignored even with the ID set, so to see events while testing, use the live domain. If the domain ever changes, update that list.
+- Ad blockers stop the script for some visitors, so the numbers are a little low. Orders in the admin panel stay the source of truth for sales.
+- The free plan keeps data for a limited time and caps monthly events; check the current limits on the Umami pricing page.
 
 ## Netlify (hosting)
 

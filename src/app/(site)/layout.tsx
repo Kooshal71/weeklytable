@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import Analytics from "@/components/Analytics";
 import {
   SUPPORT_PHONE_DISPLAY,
   SUPPORT_PHONE_TEL,
@@ -38,6 +39,8 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
           </div>
           <Link
             href="/order"
+            data-umami-event="cta-order"
+            data-umami-event-location="header"
             className="rounded-full bg-terracotta px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-terracotta-dark hover:shadow-md"
           >
             Order now
@@ -54,16 +57,29 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
             <p>Homemade food, made with care — delivered across Southend-on-Sea.</p>
           </div>
           <div className="flex flex-col items-center gap-1 sm:items-end">
-            <a href={SUPPORT_PHONE_TEL} className="transition hover:text-terracotta">
+            <a
+              href={SUPPORT_PHONE_TEL}
+              data-umami-event="contact"
+              data-umami-event-method="phone"
+              data-umami-event-location="footer"
+              className="transition hover:text-terracotta"
+            >
               {SUPPORT_PHONE_DISPLAY}
             </a>
-            <a href={SUPPORT_EMAIL_MAILTO} className="transition hover:text-terracotta">
+            <a
+              href={SUPPORT_EMAIL_MAILTO}
+              data-umami-event="contact"
+              data-umami-event-method="email"
+              data-umami-event-location="footer"
+              className="transition hover:text-terracotta"
+            >
               {SUPPORT_EMAIL_DISPLAY}
             </a>
             <p>&copy; {new Date().getFullYear()} Weekly Table</p>
           </div>
         </div>
       </footer>
+      <Analytics />
     </div>
   );
 }

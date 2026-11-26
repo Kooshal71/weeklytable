@@ -43,6 +43,8 @@ export default function HomePage() {
             <div className="mt-8 flex flex-wrap gap-3">
               <Link
                 href="/how-it-works"
+                data-umami-event="cta-how-it-works"
+                data-umami-event-location="home-hero"
                 className="rounded-full bg-terracotta px-6 py-3 text-base font-semibold text-white shadow-sm transition hover:bg-terracotta-dark hover:shadow-md"
               >
                 How it works
@@ -166,6 +168,8 @@ export default function HomePage() {
         </p>
         <Link
           href="/order"
+          data-umami-event="cta-order"
+          data-umami-event-location="home-bottom"
           className="mt-6 inline-block rounded-full bg-terracotta px-6 py-3 text-base font-semibold text-white shadow-sm transition hover:bg-terracotta-dark hover:shadow-md"
         >
           Order now

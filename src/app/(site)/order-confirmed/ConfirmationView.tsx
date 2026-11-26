@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { formatGuaranteeWindow, formatTime12h } from "@/lib/deliveryTime";
+import { track } from "@/lib/analytics";
 
 type MealSummary = {
   dishName: string;
@@ -65,6 +66,34 @@ export default function ConfirmationView() {
     return () => clearTimeout(timer);
   }, [sessionId, attempts, order?.status, order?.paymentMethod]);
 
+  // One "order-confirmed" per order, even if the page is refreshed or
+  // reopened. `revenue` + `currency` feed Umami's revenue report.
+  const isConfirmed =
+    order !== null && (order.paymentMethod === "cash" || order.status !== "pending_payment");
+  useEffect(() => {
+    if (!order || !isConfirmed) return;
+    const key = `wt-tracked-order-${order.orderId}`;
+    try {
+      if (localStorage.getItem(key)) return;
+      localStorage.setItem(key, "1");
+    } catch {
+      // Storage unavailable (private mode etc.) — track anyway.
+    }
+    track("order-confirmed", {
+      plan: order.planLabel,
+      meals: order.meals.length,
+      method: order.paymentMethod,
+      revenue: order.priceGbp / 100,
+      currency: "GBP",
+    });
+  }, [order, isConfirmed]);
+
+  const gaveUp = attempts >= MAX_POLL_ATTEMPTS;
+  useEffect(() => {
+    if (notFound) track("order-confirm-not-found");
+    else if (gaveUp && !isConfirmed) track("order-confirm-still-processing");
+  }, [notFound, gaveUp, isConfirmed]);
+
   if (!sessionId) {
     return <p className="text-espresso/75">No order reference was given.</p>;
   }
@@ -79,7 +108,6 @@ export default function ConfirmationView() {
   }
 
   if (!order || (order.paymentMethod !== "cash" && order.status === "pending_payment")) {
-    const gaveUp = attempts >= MAX_POLL_ATTEMPTS;
     return (
       <p className="text-espresso/75">
         {gaveUp

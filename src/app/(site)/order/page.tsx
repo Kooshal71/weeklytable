@@ -1,12 +1,34 @@
 import { prisma } from "@/lib/prisma";
 import MenuBrowser from "@/components/MenuBrowser";
+import type { WeekdayName } from "@/lib/cutoff";
+
+const WEEKDAY_NAMES: readonly WeekdayName[] = [
+  "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+];
+
+function firstParam(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
 
 // Menu content is admin-editable (dishes, plans, cutoff config) and must
 // reflect changes immediately without a redeploy — never statically cache
 // this page.
 export const dynamic = "force-dynamic";
 
-export default async function OrderPage() {
+// `?dish=<id>&day=<weekday>` comes from "Add to order" on the menu page: the
+// dish is pre-added on its first available date (on `day` if it's cooked
+// then). Anything unknown is ignored, and the server re-validates the whole
+// order at checkout regardless.
+export default async function OrderPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ dish?: string | string[]; day?: string | string[] }>;
+}) {
+  const params = await searchParams;
+  const initialDishId = firstParam(params.dish) ?? null;
+  const dayParam = firstParam(params.day);
+  const initialDay = WEEKDAY_NAMES.find((d) => d === dayParam) ?? null;
+
   const [dishes, plans, cutoffConfig] = await Promise.all([
     prisma.dish.findMany({
       where: { isActive: true },
@@ -44,6 +66,8 @@ export default async function OrderPage() {
       <MenuBrowser
         dishes={dishes}
         plans={plans}
+        initialDishId={initialDishId}
+        initialDay={initialDay}
         cutoffConfig={{
           leadDays: cutoffConfig.leadDays,
           cutoffTime: cutoffConfig.cutoffTime,

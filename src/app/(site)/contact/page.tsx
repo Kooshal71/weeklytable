@@ -35,6 +35,9 @@ export default async function ContactPage() {
         <div className="grid gap-6 sm:grid-cols-3">
           <a
             href={SUPPORT_PHONE_TEL}
+            data-umami-event="contact"
+            data-umami-event-method="phone"
+            data-umami-event-location="contact-page"
             className="flex flex-col gap-3 rounded-xl border border-card-border bg-white p-6 shadow-sm transition hover:border-terracotta hover:shadow-md"
           >
             <span className="flex h-11 w-11 items-center justify-center rounded-full bg-sage-light text-sage">
@@ -50,6 +53,9 @@ export default async function ContactPage() {
 
           <a
             href={SUPPORT_PHONE_WHATSAPP}
+            data-umami-event="contact"
+            data-umami-event-method="whatsapp"
+            data-umami-event-location="contact-page"
             target="_blank"
             rel="noopener noreferrer"
             className="flex flex-col gap-3 rounded-xl border border-card-border bg-white p-6 shadow-sm transition hover:border-terracotta hover:shadow-md"
@@ -67,6 +73,9 @@ export default async function ContactPage() {
 
           <a
             href={SUPPORT_EMAIL_MAILTO}
+            data-umami-event="contact"
+            data-umami-event-method="email"
+            data-umami-event-location="contact-page"
             className="flex flex-col gap-3 rounded-xl border border-card-border bg-white p-6 shadow-sm transition hover:border-terracotta hover:shadow-md"
           >
             <span className="flex h-11 w-11 items-center justify-center rounded-full bg-sage-light text-sage">
